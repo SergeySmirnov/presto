@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.spi.statistics;
 
+import com.facebook.presto.spi.QueryId;
 import com.facebook.presto.spi.plan.PlanNode;
 import com.facebook.presto.spi.plan.TableScanNode;
 
@@ -22,6 +23,7 @@ public interface ExternalPlanStatisticsProvider
 {
     PlanStatistics getStats(
             PlanNode plan,
+            QueryId queryId,
             Function<PlanNode, String> planPrinter,
             Function<TableScanNode, TableStatistics> tableStatisticsProvider);
 }

@@ -14,22 +14,28 @@
 package com.facebook.presto.cost;
 
 import com.facebook.presto.metadata.Metadata;
+import com.facebook.presto.spi.statistics.ExternalPlanStatisticsProvider;
 import com.facebook.presto.spi.statistics.ExternalPlanStatisticsProviderFactory;
 import com.google.inject.Inject;
 
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static java.util.Objects.requireNonNull;
 
 public class HistoryBasedPlanStatisticsManager
 {
     private Optional<ExternalPlanStatisticsProviderFactory> externalPlanStatisticsProviderFactory;
+    private final AtomicReference<Optional<ExternalPlanStatisticsProvider>> externalPlanStatisticsProviderRef;
     private Metadata metadata;
 
     @Inject
     public HistoryBasedPlanStatisticsManager(Metadata metadata)
     {
         this.externalPlanStatisticsProviderFactory = Optional.empty();
+        // Need a way to update externalPlanStatisticsProvider Optional when loading external stats provider plugin.
+        // At this point HistoryBasedPlanStatisticsCalculator is already created and weaved by Guice
+        externalPlanStatisticsProviderRef = new AtomicReference<>(Optional.empty());
         this.metadata = requireNonNull(metadata, "metadata is null");
     }
 
@@ -39,11 +45,11 @@ public class HistoryBasedPlanStatisticsManager
             throw new IllegalStateException("externalPlanStatisticsProviderFactory can only be set once");
         }
         this.externalPlanStatisticsProviderFactory = Optional.of(externalPlanStatisticsProviderFactory);
+        this.externalPlanStatisticsProviderRef.set(Optional.of(externalPlanStatisticsProviderFactory.getExternalPlanStatisticsProvider()));
     }
 
     public HistoryBasedPlanStatisticsCalculator getHistoryBasedPlanStatisticsCalculator(StatsCalculator delegate)
     {
-        return new HistoryBasedPlanStatisticsCalculator(
-                externalPlanStatisticsProviderFactory.map(factory -> factory.getExternalPlanStatisticsProvider()), metadata, delegate);
+        return new HistoryBasedPlanStatisticsCalculator(externalPlanStatisticsProviderRef, metadata, delegate);
     }
 }

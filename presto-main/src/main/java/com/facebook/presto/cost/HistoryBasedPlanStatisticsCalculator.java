@@ -26,6 +26,7 @@ import com.google.common.collect.ImmutableList;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static com.facebook.presto.SystemSessionProperties.useExternalPlanStatisticsEnabled;
 import static com.facebook.presto.SystemSessionProperties.useHistoryBasedPlanStatisticsEnabled;
@@ -36,13 +37,14 @@ import static java.util.Objects.requireNonNull;
 public class HistoryBasedPlanStatisticsCalculator
         implements StatsCalculator
 {
-    private final Optional<ExternalPlanStatisticsProvider> externalPlanStatisticsProvider;
+    private final AtomicReference<Optional<ExternalPlanStatisticsProvider>> externalPlanStatisticsProviderRef;
     private final Metadata metadata;
     private final StatsCalculator delegate;
 
-    public HistoryBasedPlanStatisticsCalculator(Optional<ExternalPlanStatisticsProvider> externalPlanStatisticsProvider, Metadata metadata, StatsCalculator delegate)
+    public HistoryBasedPlanStatisticsCalculator(AtomicReference<Optional<ExternalPlanStatisticsProvider>> externalPlanStatisticsProviderRef,
+            Metadata metadata, StatsCalculator delegate)
     {
-        this.externalPlanStatisticsProvider = requireNonNull(externalPlanStatisticsProvider, "externalPlanStatisticsProvider is null");
+        this.externalPlanStatisticsProviderRef = requireNonNull(externalPlanStatisticsProviderRef, "externalPlanStatisticsProviderRef is null");
         this.metadata = requireNonNull(metadata, "metadata is null");
         this.delegate = requireNonNull(delegate, "delegate is null");
     }
@@ -66,9 +68,10 @@ public class HistoryBasedPlanStatisticsCalculator
     private PlanStatistics getStatistics(PlanNode planNode, Session session, TypeProvider types, Lookup lookup)
     {
         planNode = removeGroupReferences(planNode, lookup);
-        if (externalPlanStatisticsProvider.isPresent() && useExternalPlanStatisticsEnabled(session)) {
-            return externalPlanStatisticsProvider.get().getStats(
+        if (externalPlanStatisticsProviderRef.get().isPresent() && useExternalPlanStatisticsEnabled(session)) {
+            return externalPlanStatisticsProviderRef.get().get().getStats(
                     planNode,
+                    session.getQueryId(),
                     node -> jsonLogicalPlan(node, types, metadata.getFunctionAndTypeManager(), StatsAndCosts.empty(), session),
                     tableScanNode -> metadata.getTableStatistics(
                             session,
