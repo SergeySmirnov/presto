@@ -14,6 +14,7 @@
 package com.facebook.presto.cost;
 
 import com.facebook.presto.spi.Plugin;
+import com.facebook.presto.spi.QueryId;
 import com.facebook.presto.spi.WarningCollector;
 import com.facebook.presto.spi.plan.PlanNode;
 import com.facebook.presto.spi.plan.TableScanNode;
@@ -106,7 +107,8 @@ public class TestExternalStatsProvider
         }
 
         @Override
-        public PlanStatistics getStats(PlanNode plan, Function<PlanNode, String> planPrinter, Function<TableScanNode, TableStatistics> tableStatisticsProvider)
+        public PlanStatistics getStats(PlanNode plan, QueryId queryId, Function<PlanNode, String> planPrinter,
+                Function<TableScanNode, TableStatistics> tableStatisticsProvider)
         {
             if (plan instanceof TableScanNode) {
                 TableScanNode node = (TableScanNode) plan;

@@ -64,6 +64,7 @@ public class HistoryBasedPlanStatisticsCalculator
         if (useExternalPlanStatisticsEnabled(session)) {
             return externalStatisticsProvider.getStats(
                     planNode,
+                    session.getQueryId(),
                     node -> jsonLogicalPlan(node, types, metadata.getFunctionAndTypeManager(), StatsAndCosts.empty(), session),
                     tableScanNode -> metadata.getTableStatistics(
                             session,
