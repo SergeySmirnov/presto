@@ -20,6 +20,7 @@ import com.facebook.presto.spi.plan.PlanNode;
 import com.facebook.presto.spi.plan.TableScanNode;
 import com.facebook.presto.spi.statistics.Estimate;
 import com.facebook.presto.spi.statistics.ExternalPlanStatisticsProvider;
+import com.facebook.presto.spi.statistics.ExternalPlanStatisticsProviderFactory;
 import com.facebook.presto.spi.statistics.PlanStatistics;
 import com.facebook.presto.spi.statistics.TableStatistics;
 import com.facebook.presto.sql.planner.LogicalPlanner;
@@ -32,6 +33,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import org.testng.annotations.Test;
 
+import java.util.Map;
 import java.util.function.Function;
 
 import static com.facebook.presto.SystemSessionProperties.USE_EXTERNAL_PLAN_STATISTICS;
@@ -60,11 +62,12 @@ public class TestExternalStatsProvider
         queryRunner.installPlugin(new Plugin()
         {
             @Override
-            public Iterable<ExternalPlanStatisticsProvider> getExternalPlanStatisticsProviders()
+            public Iterable<ExternalPlanStatisticsProviderFactory> getExternalPlanStatisticsProviderFactories()
             {
-                return ImmutableList.of(new TestExternalPlanStatisticsProvider());
+                return ImmutableList.of(new TestExternalPlanStatisticsProviderFactory());
             }
         });
+        queryRunner.getHistoryBasedPlanStatisticsManager().load("test", ImmutableMap.of());
     }
 
     @Test
@@ -93,6 +96,22 @@ public class TestExternalStatsProvider
             PlanAssert.assertPlan(transactionSession, queryRunner.getMetadata(), queryRunner.getStatsCalculator(), actualPlan, pattern);
             return null;
         });
+    }
+
+    private static class TestExternalPlanStatisticsProviderFactory
+            implements ExternalPlanStatisticsProviderFactory
+    {
+        @Override
+        public String getName()
+        {
+            return "test";
+        }
+
+        @Override
+        public ExternalPlanStatisticsProvider create(Map<String, String> config)
+        {
+            return new TestExternalPlanStatisticsProvider();
+        }
     }
 
     private static class TestExternalPlanStatisticsProvider

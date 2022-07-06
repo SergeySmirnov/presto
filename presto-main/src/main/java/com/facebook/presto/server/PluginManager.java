@@ -37,7 +37,7 @@ import com.facebook.presto.spi.resourceGroups.ResourceGroupConfigurationManagerF
 import com.facebook.presto.spi.security.PasswordAuthenticatorFactory;
 import com.facebook.presto.spi.security.SystemAccessControlFactory;
 import com.facebook.presto.spi.session.SessionPropertyConfigurationManagerFactory;
-import com.facebook.presto.spi.statistics.ExternalPlanStatisticsProvider;
+import com.facebook.presto.spi.statistics.ExternalPlanStatisticsProviderFactory;
 import com.facebook.presto.spi.storage.TempStorageFactory;
 import com.facebook.presto.spi.ttl.ClusterTtlProviderFactory;
 import com.facebook.presto.spi.ttl.NodeTtlFetcherFactory;
@@ -293,9 +293,9 @@ public class PluginManager
             clusterTtlProviderManager.addClusterTtlProviderFactory(clusterTtlProviderFactory);
         }
 
-        for (ExternalPlanStatisticsProvider externalPlanStatisticsProvider : plugin.getExternalPlanStatisticsProviders()) {
-            log.info("Registering plan statistics provider factory %s", externalPlanStatisticsProvider.getName());
-            historyBasedPlanStatisticsManager.addExternalPlanStatisticsProviderFactory(externalPlanStatisticsProvider);
+        for (ExternalPlanStatisticsProviderFactory factory : plugin.getExternalPlanStatisticsProviderFactories()) {
+            log.info("Registering plan statistics provider factory %s", factory.getName());
+            historyBasedPlanStatisticsManager.addExternalPlanStatisticsProviderFactory(factory);
         }
     }
 

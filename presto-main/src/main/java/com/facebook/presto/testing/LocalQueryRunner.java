@@ -1000,6 +1000,11 @@ public class LocalQueryRunner
                 partitioningProviderManager).getPlanningTimeOptimizers();
     }
 
+    public HistoryBasedPlanStatisticsManager getHistoryBasedPlanStatisticsManager()
+    {
+        return historyBasedPlanStatisticsManager;
+    }
+
     public Plan createPlan(Session session, @Language("SQL") String sql, List<PlanOptimizer> optimizers, WarningCollector warningCollector)
     {
         return createPlan(session, sql, optimizers, LogicalPlanner.Stage.OPTIMIZED_AND_VALIDATED, warningCollector);
