@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.cost;
 
+import com.facebook.airlift.log.Logger;
 import com.facebook.presto.Session;
 import com.facebook.presto.metadata.Metadata;
 import com.facebook.presto.spi.Constraint;
@@ -34,6 +35,7 @@ import static java.util.Objects.requireNonNull;
 public class HistoryBasedPlanStatisticsCalculator
         implements StatsCalculator
 {
+    private static final Logger log = Logger.get(HistoryBasedPlanStatisticsCalculator.class);
     private final Supplier<ExternalPlanStatisticsProvider> externalPlanStatisticsProvider;
     private final Metadata metadata;
     private final StatsCalculator delegate;
@@ -62,15 +64,21 @@ public class HistoryBasedPlanStatisticsCalculator
         planNode = removeGroupReferences(planNode, lookup);
         ExternalPlanStatisticsProvider externalStatisticsProvider = externalPlanStatisticsProvider.get();
         if (useExternalPlanStatisticsEnabled(session)) {
-            return externalStatisticsProvider.getStats(
-                    planNode,
-                    session.getQueryId(),
-                    node -> jsonLogicalPlan(node, types, metadata.getFunctionAndTypeManager(), StatsAndCosts.empty(), session),
-                    tableScanNode -> metadata.getTableStatistics(
-                            session,
-                            tableScanNode.getTable(),
-                            ImmutableList.copyOf(tableScanNode.getAssignments().values()),
-                            new Constraint<>(tableScanNode.getCurrentConstraint())));
+            try {
+                return externalStatisticsProvider.getStats(
+                        planNode,
+                        session.getQueryId(),
+                        node -> jsonLogicalPlan(node, types, metadata.getFunctionAndTypeManager(), StatsAndCosts.empty(), session),
+                        tableScanNode -> metadata.getTableStatistics(
+                                session,
+                                tableScanNode.getTable(),
+                                ImmutableList.copyOf(tableScanNode.getAssignments().values()),
+                                new Constraint<>(tableScanNode.getCurrentConstraint())));
+            }
+            catch (Exception e) {
+                log.error(e, "Error calling externalStatisticsProvider.getStats");
+                return PlanStatistics.empty();
+            }
         }
         if (!useHistoryBasedPlanStatisticsEnabled(session)) {
             return PlanStatistics.empty();
