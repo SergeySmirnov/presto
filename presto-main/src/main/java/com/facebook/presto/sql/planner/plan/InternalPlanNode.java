@@ -20,8 +20,6 @@ import com.facebook.presto.spi.plan.PlanVisitor;
 
 import java.util.Optional;
 
-import static com.google.common.base.Preconditions.checkArgument;
-
 public abstract class InternalPlanNode
         extends PlanNode
 {
@@ -32,7 +30,8 @@ public abstract class InternalPlanNode
 
     public final <R, C> R accept(PlanVisitor<R, C> visitor, C context)
     {
-        checkArgument(visitor instanceof InternalPlanVisitor, "PlanVisitor is only for connector to use; InternalPlanNode should never use it");
+//        Disable to avoid class loader issues (instanceof is false for instance of the same class loaded by different classloader)
+//        checkArgument(visitor instanceof InternalPlanVisitor, "PlanVisitor is only for connector to use; InternalPlanNode should never use it");
         return accept((InternalPlanVisitor<R, C>) visitor, context);
     }
 
