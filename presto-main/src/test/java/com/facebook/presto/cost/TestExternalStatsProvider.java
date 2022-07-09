@@ -17,6 +17,7 @@ import com.facebook.presto.spi.Plugin;
 import com.facebook.presto.spi.QueryId;
 import com.facebook.presto.spi.WarningCollector;
 import com.facebook.presto.spi.plan.PlanNode;
+import com.facebook.presto.spi.plan.PlanNodeId;
 import com.facebook.presto.spi.plan.TableScanNode;
 import com.facebook.presto.spi.statistics.Estimate;
 import com.facebook.presto.spi.statistics.ExternalPlanStatisticsProvider;
@@ -34,6 +35,7 @@ import com.google.common.collect.ImmutableMap;
 import org.testng.annotations.Test;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 
 import static com.facebook.presto.SystemSessionProperties.USE_EXTERNAL_PLAN_STATISTICS;
@@ -127,7 +129,7 @@ public class TestExternalStatsProvider
 
         @Override
         public PlanStatistics getStats(PlanNode plan, QueryId queryId, Function<PlanNode, String> planPrinter,
-                Function<TableScanNode, TableStatistics> tableStatisticsProvider)
+                Optional<Function<PlanNode, Map<PlanNodeId, TableStatistics>>> tableStatisticsExtractor)
         {
             if (plan instanceof TableScanNode) {
                 TableScanNode node = (TableScanNode) plan;

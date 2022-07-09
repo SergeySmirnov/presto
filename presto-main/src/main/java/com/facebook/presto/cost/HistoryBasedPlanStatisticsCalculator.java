@@ -24,10 +24,12 @@ import com.facebook.presto.sql.planner.TypeProvider;
 import com.facebook.presto.sql.planner.iterative.Lookup;
 import com.google.common.collect.ImmutableList;
 
+import java.util.Optional;
 import java.util.function.Supplier;
 
 import static com.facebook.presto.SystemSessionProperties.useExternalPlanStatisticsEnabled;
 import static com.facebook.presto.SystemSessionProperties.useHistoryBasedPlanStatisticsEnabled;
+import static com.facebook.presto.cost.TableStatisticsExtractor.extractTableStatistics;
 import static com.facebook.presto.sql.planner.iterative.Plans.resolveGroupReferences;
 import static com.facebook.presto.sql.planner.planPrinter.PlanPrinter.jsonLogicalPlan;
 import static java.util.Objects.requireNonNull;
@@ -69,11 +71,12 @@ public class HistoryBasedPlanStatisticsCalculator
                         planNode,
                         session.getQueryId(),
                         node -> jsonLogicalPlan(node, types, metadata.getFunctionAndTypeManager(), StatsAndCosts.empty(), session),
-                        tableScanNode -> metadata.getTableStatistics(
-                                session,
-                                tableScanNode.getTable(),
-                                ImmutableList.copyOf(tableScanNode.getAssignments().values()),
-                                new Constraint<>(tableScanNode.getCurrentConstraint())));
+                        Optional.of(node -> extractTableStatistics(node,
+                                tableScanNode -> metadata.getTableStatistics(
+                                    session,
+                                    tableScanNode.getTable(),
+                                    ImmutableList.copyOf(tableScanNode.getAssignments().values()),
+                                    new Constraint<>(tableScanNode.getCurrentConstraint())))));
             }
             catch (Exception e) {
                 log.error(e, "Error calling externalStatisticsProvider.getStats");

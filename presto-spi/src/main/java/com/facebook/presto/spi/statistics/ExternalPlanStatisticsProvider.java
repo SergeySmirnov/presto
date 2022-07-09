@@ -15,8 +15,10 @@ package com.facebook.presto.spi.statistics;
 
 import com.facebook.presto.spi.QueryId;
 import com.facebook.presto.spi.plan.PlanNode;
-import com.facebook.presto.spi.plan.TableScanNode;
+import com.facebook.presto.spi.plan.PlanNodeId;
 
+import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 
 public interface ExternalPlanStatisticsProvider
@@ -27,5 +29,5 @@ public interface ExternalPlanStatisticsProvider
             PlanNode plan,
             QueryId queryId,
             Function<PlanNode, String> planPrinter,
-            Function<TableScanNode, TableStatistics> tableStatisticsProvider);
+            Optional<Function<PlanNode, Map<PlanNodeId, TableStatistics>>> tableStatisticsExtractor);
 }
