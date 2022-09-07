@@ -22,7 +22,6 @@ import com.facebook.presto.spi.statistics.ExternalPlanStatisticsProvider;
 import com.facebook.presto.spi.statistics.PlanStatistics;
 import com.facebook.presto.sql.planner.TypeProvider;
 import com.facebook.presto.sql.planner.iterative.Lookup;
-import com.facebook.presto.sql.planner.plan.AbstractJoinNode;
 import com.google.common.collect.ImmutableList;
 
 import java.util.Optional;
@@ -66,8 +65,7 @@ public class HistoryBasedPlanStatisticsCalculator
     {
         planNode = removeGroupReferences(planNode, lookup);
         ExternalPlanStatisticsProvider externalStatisticsProvider = externalPlanStatisticsProvider.get();
-        // Temp condition: skip for join nodes (wrong cardinality estimations for joins can cause query to fail due to memory issues)
-        if (useExternalPlanStatisticsEnabled(session) && !(planNode instanceof AbstractJoinNode)) {
+        if (useExternalPlanStatisticsEnabled(session)) {
             try {
                 return externalStatisticsProvider.getStats(
                         planNode,
