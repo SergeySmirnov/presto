@@ -63,9 +63,9 @@ public class HistoryBasedPlanStatisticsCalculator
 
     private PlanStatistics getStatistics(PlanNode planNode, Session session, TypeProvider types, Lookup lookup)
     {
-        planNode = removeGroupReferences(planNode, lookup);
-        ExternalPlanStatisticsProvider externalStatisticsProvider = externalPlanStatisticsProvider.get();
         if (useExternalPlanStatisticsEnabled(session)) {
+            ExternalPlanStatisticsProvider externalStatisticsProvider = externalPlanStatisticsProvider.get();
+            planNode = removeGroupReferences(planNode, lookup);
             try {
                 return externalStatisticsProvider.getStats(
                         planNode,
