@@ -18,6 +18,8 @@ import com.facebook.presto.spi.plan.PlanNode;
 import com.facebook.presto.spi.plan.PlanNodeId;
 import com.facebook.presto.spi.plan.ProjectNode;
 import com.facebook.presto.spi.plan.TableScanNode;
+import com.facebook.presto.spi.plan.ValuesNode;
+import com.facebook.presto.spi.statistics.Estimate;
 import com.facebook.presto.spi.statistics.TableStatistics;
 import com.facebook.presto.sql.planner.plan.InternalPlanVisitor;
 import com.google.common.collect.ImmutableMap;
@@ -75,6 +77,15 @@ public class TableStatisticsExtractor
         {
             optionallyCollectStatsForNodeSource(node.getId(), node.getSource());
             return super.visitFilter(node, context);
+        }
+
+        @Override
+        public Void visitValues(ValuesNode node, Void context)
+        {
+            final int rowCount = node.getRows().size();
+            tableStatistics.put(node.getId(), TableStatistics.builder().setRowCount(Estimate.of(rowCount))
+                    .setTotalSize(Estimate.of(rowCount)).build()); // TODO temporary estimate, need to calculate actual size
+            return null;
         }
 
         private void optionallyCollectStatsForNodeSource(PlanNodeId parentId, PlanNode node)
