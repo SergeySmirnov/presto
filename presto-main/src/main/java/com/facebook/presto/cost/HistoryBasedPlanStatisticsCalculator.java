@@ -16,10 +16,12 @@ package com.facebook.presto.cost;
 import com.facebook.airlift.log.Logger;
 import com.facebook.presto.Session;
 import com.facebook.presto.common.plan.PlanCanonicalizationStrategy;
+import com.facebook.presto.metadata.Metadata;
 import com.facebook.presto.spi.Constraint;
 import com.facebook.presto.spi.plan.AggregationNode;
 import com.facebook.presto.spi.plan.PlanNode;
 import com.facebook.presto.spi.plan.PlanNodeWithHash;
+import com.facebook.presto.spi.statistics.ExternalPlanStatisticsProvider;
 import com.facebook.presto.spi.statistics.HistoricalPlanStatistics;
 import com.facebook.presto.spi.statistics.HistoryBasedPlanStatisticsProvider;
 import com.facebook.presto.spi.statistics.HistoryBasedSourceInfo;
@@ -27,8 +29,8 @@ import com.facebook.presto.spi.statistics.PlanStatistics;
 import com.facebook.presto.sql.planner.PlanHasher;
 import com.facebook.presto.sql.planner.TypeProvider;
 import com.facebook.presto.sql.planner.iterative.Lookup;
-import com.facebook.presto.sql.planner.plan.AbstractJoinNode;
 import com.facebook.presto.sql.planner.optimizations.PlanNodeSearcher;
+import com.facebook.presto.sql.planner.plan.AbstractJoinNode;
 import com.facebook.presto.sql.planner.plan.JoinNode;
 import com.facebook.presto.sql.planner.plan.SemiJoinNode;
 import com.google.common.annotations.VisibleForTesting;
@@ -40,7 +42,6 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import io.airlift.units.DataSize;
 
-import java.util.Optional;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -50,12 +51,12 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
+import static com.facebook.presto.SystemSessionProperties.useExternalPlanStatisticsEnabled;
 import static com.facebook.presto.SystemSessionProperties.useHistoryBasedPlanStatisticsEnabled;
+import static com.facebook.presto.common.plan.PlanCanonicalizationStrategy.historyBasedPlanCanonicalizationStrategyList;
 import static com.facebook.presto.cost.TableStatisticsExtractor.extractTableStatistics;
 import static com.facebook.presto.sql.planner.iterative.Plans.resolveGroupReferences;
 import static com.facebook.presto.sql.planner.planPrinter.PlanPrinter.jsonLogicalPlan;
-import static com.facebook.presto.common.plan.PlanCanonicalizationStrategy.historyBasedPlanCanonicalizationStrategyList;
-import static com.facebook.presto.sql.planner.iterative.Plans.resolveGroupReferences;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.graph.Traverser.forTree;
 import static java.lang.String.format;
@@ -103,9 +104,13 @@ public class HistoryBasedPlanStatisticsCalculator
     public HistoryBasedPlanStatisticsCalculator(
             Supplier<HistoryBasedPlanStatisticsProvider> historyBasedPlanStatisticsProvider,
             StatsCalculator delegate,
-            PlanHasher planHasher)
+            PlanHasher planHasher,
+            Supplier<ExternalPlanStatisticsProvider> externalPlanStatisticsProvider,
+            Metadata metadata)
     {
         this.historyBasedPlanStatisticsProvider = requireNonNull(historyBasedPlanStatisticsProvider, "historyBasedPlanStatisticsProvider is null");
+        this.externalPlanStatisticsProvider = requireNonNull(externalPlanStatisticsProvider, "externalPlanStatisticsProvider is null");
+        this.metadata = requireNonNull(metadata, "metadata is null");
         this.delegate = requireNonNull(delegate, "delegate is null");
         this.planHasher = requireNonNull(planHasher, "planHasher is null");
     }
@@ -114,7 +119,7 @@ public class HistoryBasedPlanStatisticsCalculator
     public PlanNodeStatsEstimate calculateStats(PlanNode node, StatsProvider sourceStats, Lookup lookup, Session session, TypeProvider types)
     {
         PlanNodeStatsEstimate delegateStats = delegate.calculateStats(node, sourceStats, lookup, session, types);
-        return getStatistics(node, session, lookup, delegateStats);
+        return getStatistics(node, session, lookup, delegateStats, types);
     }
 
     @Override
@@ -167,9 +172,15 @@ public class HistoryBasedPlanStatisticsCalculator
         return allHashesBuilder.build();
     }
 
-    private PlanNodeStatsEstimate getStatistics(PlanNode planNode, Session session, Lookup lookup, PlanNodeStatsEstimate delegateStats)
+    private PlanNodeStatsEstimate getStatistics(PlanNode planNode, Session session, Lookup lookup, PlanNodeStatsEstimate delegateStats, TypeProvider types)
     {
         PlanNode plan = resolveGroupReferences(planNode, lookup);
+
+        // if external Stats Provider enabled and node is Join or Aggregation node - get stats from external provider
+        if (useExternalPlanStatisticsEnabled(session) && (planNode instanceof AbstractJoinNode || planNode instanceof AggregationNode)) {
+            return delegateStats.combineStats(getExternalStatistics(plan, session, types, lookup), new HistoryBasedSourceInfo(Optional.empty()));
+        }
+
         if (!useHistoryBasedPlanStatisticsEnabled(session)) {
             return delegateStats;
         }
@@ -200,37 +211,24 @@ public class HistoryBasedPlanStatisticsCalculator
                 .orElse(delegateStats);
     }
 
-    private PlanNode removeGroupReferences(PlanNode planNode, Lookup lookup)
+    private PlanStatistics getExternalStatistics(PlanNode planNode, Session session, TypeProvider types, Lookup lookup)
     {
-        return resolveGroupReferences(planNode, lookup);
-    }
-
-    private PlanStatistics getStatistics(PlanNode planNode, Session session, TypeProvider types, Lookup lookup)
-    {
-        if (useExternalPlanStatisticsEnabled(session) && (planNode instanceof AbstractJoinNode)) {
-            ExternalPlanStatisticsProvider externalStatisticsProvider = externalPlanStatisticsProvider.get();
-            planNode = removeGroupReferences(planNode, lookup);
-            try {
-                return externalStatisticsProvider.getStats(
-                        planNode,
-                        session.getQueryId(),
-                        node -> jsonLogicalPlan(node, types, metadata.getFunctionAndTypeManager(), StatsAndCosts.empty(), session),
-                        Optional.of(node -> extractTableStatistics(node,
-                                tableScanNode -> metadata.getTableStatistics(
-                                        session,
-                                        tableScanNode.getTable(),
-                                        ImmutableList.copyOf(tableScanNode.getAssignments().values()),
-                                        new Constraint<>(tableScanNode.getCurrentConstraint())))));
-            }
-            catch (Exception e) {
-                log.error(e, "Error calling externalStatisticsProvider.getStats");
-                return PlanStatistics.empty();
-            }
+        ExternalPlanStatisticsProvider externalStatisticsProvider = externalPlanStatisticsProvider.get();
+        try {
+            return externalStatisticsProvider.getStats(
+                    planNode,
+                    session.getQueryId(),
+                    node -> jsonLogicalPlan(node, types, metadata.getFunctionAndTypeManager(), StatsAndCosts.empty(), session),
+                    Optional.of(node -> extractTableStatistics(node,
+                            tableScanNode -> metadata.getTableStatistics(
+                                    session,
+                                    tableScanNode.getTable(),
+                                    ImmutableList.copyOf(tableScanNode.getAssignments().values()),
+                                    new Constraint<>(tableScanNode.getCurrentConstraint())))));
         }
-        if (!useHistoryBasedPlanStatisticsEnabled(session)) {
+        catch (Exception e) {
+            log.error(e, "Error calling externalStatisticsProvider.getStats");
             return PlanStatistics.empty();
         }
-        // Unimplemented
-        return PlanStatistics.empty();
     }
 }

@@ -13,16 +13,16 @@
  */
 package com.facebook.presto.cost;
 
-import com.facebook.presto.metadata.SessionPropertyManager;
 import com.facebook.airlift.log.Logger;
 import com.facebook.presto.metadata.Metadata;
+import com.facebook.presto.metadata.SessionPropertyManager;
 import com.facebook.presto.spi.statistics.EmptyPlanStatisticsProvider;
+import com.facebook.presto.spi.statistics.ExternalPlanStatisticsProvider;
+import com.facebook.presto.spi.statistics.ExternalPlanStatisticsProviderFactory;
 import com.facebook.presto.spi.statistics.HistoryBasedPlanStatisticsProvider;
 import com.facebook.presto.sql.planner.CachingPlanHasher;
 import com.facebook.presto.sql.planner.PlanHasher;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.facebook.presto.spi.statistics.ExternalPlanStatisticsProvider;
-import com.facebook.presto.spi.statistics.ExternalPlanStatisticsProviderFactory;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableMap;
 import com.google.inject.Inject;
@@ -57,20 +57,25 @@ public class HistoryBasedPlanStatisticsManager
     private boolean externalProviderAdded;
 
     @Inject
-    public HistoryBasedPlanStatisticsManager(ObjectMapper objectMapper, SessionPropertyManager sessionPropertyManager)
+    public HistoryBasedPlanStatisticsManager(ObjectMapper objectMapper, SessionPropertyManager sessionPropertyManager, Metadata metadata)
     {
         requireNonNull(objectMapper, "objectMapper is null");
         this.sessionPropertyManager = requireNonNull(sessionPropertyManager, "sessionPropertyManager is null");
         this.planHasher = new CachingPlanHasher(objectMapper);
+        this.metadata = requireNonNull(metadata, "metadata is null");
     }
 
     public void addExternalPlanStatisticsProviderFactory(ExternalPlanStatisticsProviderFactory factory)
-    public void addHistoryBasedPlanStatisticsProviderFactory(HistoryBasedPlanStatisticsProvider historyBasedPlanStatisticsProvider)
     {
         requireNonNull(factory, "ExternalPlanStatisticsProviderFactory is null");
 
         if (externalPlanStatisticsProviderFactories.putIfAbsent(factory.getName(), factory) != null) {
             throw new IllegalArgumentException(format("ExternalPlanStatisticsProviderFactory '%s' is already registered", factory.getName()));
+        }
+    }
+
+    public void addHistoryBasedPlanStatisticsProviderFactory(HistoryBasedPlanStatisticsProvider historyBasedPlanStatisticsProvider)
+    {
         if (statisticsProviderAdded) {
             throw new IllegalStateException("historyBasedPlanStatisticsProvider can only be set once");
         }
@@ -80,7 +85,7 @@ public class HistoryBasedPlanStatisticsManager
 
     public HistoryBasedPlanStatisticsCalculator getHistoryBasedPlanStatisticsCalculator(StatsCalculator delegate)
     {
-        return new HistoryBasedPlanStatisticsCalculator(() -> historyBasedPlanStatisticsProvider, delegate, planHasher);
+        return new HistoryBasedPlanStatisticsCalculator(() -> historyBasedPlanStatisticsProvider, delegate, planHasher, () -> externalPlanStatisticsProvider, metadata);
     }
 
     public HistoryBasedPlanStatisticsTracker getHistoryBasedPlanStatisticsTracker()
