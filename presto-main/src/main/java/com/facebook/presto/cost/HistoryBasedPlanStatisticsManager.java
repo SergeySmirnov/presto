@@ -14,13 +14,29 @@
 package com.facebook.presto.cost;
 
 import com.facebook.presto.metadata.SessionPropertyManager;
+import com.facebook.airlift.log.Logger;
+import com.facebook.presto.metadata.Metadata;
 import com.facebook.presto.spi.statistics.EmptyPlanStatisticsProvider;
 import com.facebook.presto.spi.statistics.HistoryBasedPlanStatisticsProvider;
 import com.facebook.presto.sql.planner.CachingPlanHasher;
 import com.facebook.presto.sql.planner.PlanHasher;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.facebook.presto.spi.statistics.ExternalPlanStatisticsProvider;
+import com.facebook.presto.spi.statistics.ExternalPlanStatisticsProviderFactory;
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.ImmutableMap;
 import com.google.inject.Inject;
 
+import java.io.File;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+import static com.facebook.presto.util.PropertiesUtil.loadProperties;
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkState;
+import static com.google.common.base.Strings.isNullOrEmpty;
+import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 
 public class HistoryBasedPlanStatisticsManager
@@ -30,6 +46,15 @@ public class HistoryBasedPlanStatisticsManager
 
     private HistoryBasedPlanStatisticsProvider historyBasedPlanStatisticsProvider = EmptyPlanStatisticsProvider.getInstance();
     private boolean statisticsProviderAdded;
+    private static final Logger log = Logger.get(HistoryBasedPlanStatisticsManager.class);
+    private static final File EXTERNAL_PLAN_STATISTICS_PROVIDER_CONFIG = new File("etc/external-plan-statistics-provider.properties");
+    private static final String EXTERNAL_PLAN_STATISTICS_PROVIDER_PROPERTY_NAME = "external-plan-statistics-provider.factory";
+    private static final String DEFAULT_EXTERNAL_PLAN_STATISTICS_PROVIDER_FACTORY_NAME = "smarter-warehouse";
+    private ExternalPlanStatisticsProvider externalPlanStatisticsProvider;
+    private final Map<String, ExternalPlanStatisticsProviderFactory> externalPlanStatisticsProviderFactories = new ConcurrentHashMap<>();
+
+    private final Metadata metadata;
+    private boolean externalProviderAdded;
 
     @Inject
     public HistoryBasedPlanStatisticsManager(ObjectMapper objectMapper, SessionPropertyManager sessionPropertyManager)
@@ -39,8 +64,13 @@ public class HistoryBasedPlanStatisticsManager
         this.planHasher = new CachingPlanHasher(objectMapper);
     }
 
+    public void addExternalPlanStatisticsProviderFactory(ExternalPlanStatisticsProviderFactory factory)
     public void addHistoryBasedPlanStatisticsProviderFactory(HistoryBasedPlanStatisticsProvider historyBasedPlanStatisticsProvider)
     {
+        requireNonNull(factory, "ExternalPlanStatisticsProviderFactory is null");
+
+        if (externalPlanStatisticsProviderFactories.putIfAbsent(factory.getName(), factory) != null) {
+            throw new IllegalArgumentException(format("ExternalPlanStatisticsProviderFactory '%s' is already registered", factory.getName()));
         if (statisticsProviderAdded) {
             throw new IllegalStateException("historyBasedPlanStatisticsProvider can only be set once");
         }
@@ -56,5 +86,42 @@ public class HistoryBasedPlanStatisticsManager
     public HistoryBasedPlanStatisticsTracker getHistoryBasedPlanStatisticsTracker()
     {
         return new HistoryBasedPlanStatisticsTracker(() -> historyBasedPlanStatisticsProvider, sessionPropertyManager, planHasher);
+    }
+
+    public void loadExternalPlanStatisticsProvider()
+            throws Exception
+    {
+        if (EXTERNAL_PLAN_STATISTICS_PROVIDER_CONFIG.exists()) {
+            Map<String, String> properties = new HashMap<>(loadProperties(EXTERNAL_PLAN_STATISTICS_PROVIDER_CONFIG));
+            String factoryName = properties.remove(EXTERNAL_PLAN_STATISTICS_PROVIDER_PROPERTY_NAME);
+
+            checkArgument(!isNullOrEmpty(factoryName),
+                    "External Plan Statistics Provider configuration %s does not contain %s", EXTERNAL_PLAN_STATISTICS_PROVIDER_CONFIG.getAbsoluteFile(),
+                    EXTERNAL_PLAN_STATISTICS_PROVIDER_PROPERTY_NAME);
+            load(factoryName, properties);
+        }
+        else {
+            load(DEFAULT_EXTERNAL_PLAN_STATISTICS_PROVIDER_FACTORY_NAME, ImmutableMap.of());
+        }
+    }
+
+    @VisibleForTesting
+    public void load(String factoryName, Map<String, String> properties)
+    {
+        log.info("-- Loading External Plan Statistics Provider factory --");
+
+        ExternalPlanStatisticsProviderFactory factory = externalPlanStatisticsProviderFactories.get(factoryName);
+        checkState(factory != null, "External Plan Statistics Provider factory %s is not registered", factoryName);
+
+        ExternalPlanStatisticsProvider provider = factory.create(properties);
+
+        if (externalProviderAdded) {
+            throw new IllegalStateException("ExternalPlanStatisticsProvider can only be set once");
+        }
+
+        this.externalPlanStatisticsProvider = provider;
+        externalProviderAdded = true;
+
+        log.info("-- Loaded External Plan Statistics Provider %s --", factoryName);
     }
 }

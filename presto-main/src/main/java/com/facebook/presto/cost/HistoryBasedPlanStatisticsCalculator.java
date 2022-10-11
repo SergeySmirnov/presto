@@ -13,8 +13,10 @@
  */
 package com.facebook.presto.cost;
 
+import com.facebook.airlift.log.Logger;
 import com.facebook.presto.Session;
 import com.facebook.presto.common.plan.PlanCanonicalizationStrategy;
+import com.facebook.presto.spi.Constraint;
 import com.facebook.presto.spi.plan.AggregationNode;
 import com.facebook.presto.spi.plan.PlanNode;
 import com.facebook.presto.spi.plan.PlanNodeWithHash;
@@ -25,6 +27,7 @@ import com.facebook.presto.spi.statistics.PlanStatistics;
 import com.facebook.presto.sql.planner.PlanHasher;
 import com.facebook.presto.sql.planner.TypeProvider;
 import com.facebook.presto.sql.planner.iterative.Lookup;
+import com.facebook.presto.sql.planner.plan.AbstractJoinNode;
 import com.facebook.presto.sql.planner.optimizations.PlanNodeSearcher;
 import com.facebook.presto.sql.planner.plan.JoinNode;
 import com.facebook.presto.sql.planner.plan.SemiJoinNode;
@@ -37,6 +40,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import io.airlift.units.DataSize;
 
+import java.util.Optional;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -47,6 +51,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 import static com.facebook.presto.SystemSessionProperties.useHistoryBasedPlanStatisticsEnabled;
+import static com.facebook.presto.cost.TableStatisticsExtractor.extractTableStatistics;
+import static com.facebook.presto.sql.planner.iterative.Plans.resolveGroupReferences;
+import static com.facebook.presto.sql.planner.planPrinter.PlanPrinter.jsonLogicalPlan;
 import static com.facebook.presto.common.plan.PlanCanonicalizationStrategy.historyBasedPlanCanonicalizationStrategyList;
 import static com.facebook.presto.sql.planner.iterative.Plans.resolveGroupReferences;
 import static com.google.common.collect.ImmutableList.toImmutableList;
@@ -87,6 +94,9 @@ public class HistoryBasedPlanStatisticsCalculator
             });
 
     private final Supplier<HistoryBasedPlanStatisticsProvider> historyBasedPlanStatisticsProvider;
+    private static final Logger log = Logger.get(HistoryBasedPlanStatisticsCalculator.class);
+    private final Supplier<ExternalPlanStatisticsProvider> externalPlanStatisticsProvider;
+    private final Metadata metadata;
     private final StatsCalculator delegate;
     private final PlanHasher planHasher;
 
@@ -188,5 +198,39 @@ public class HistoryBasedPlanStatisticsCalculator
                 .map(HistoricalPlanStatistics::getLastRunStatistics)
                 .map(planStatistics -> delegateStats.combineStats(planStatistics, new HistoryBasedSourceInfo(Optional.empty())))
                 .orElse(delegateStats);
+    }
+
+    private PlanNode removeGroupReferences(PlanNode planNode, Lookup lookup)
+    {
+        return resolveGroupReferences(planNode, lookup);
+    }
+
+    private PlanStatistics getStatistics(PlanNode planNode, Session session, TypeProvider types, Lookup lookup)
+    {
+        if (useExternalPlanStatisticsEnabled(session) && (planNode instanceof AbstractJoinNode)) {
+            ExternalPlanStatisticsProvider externalStatisticsProvider = externalPlanStatisticsProvider.get();
+            planNode = removeGroupReferences(planNode, lookup);
+            try {
+                return externalStatisticsProvider.getStats(
+                        planNode,
+                        session.getQueryId(),
+                        node -> jsonLogicalPlan(node, types, metadata.getFunctionAndTypeManager(), StatsAndCosts.empty(), session),
+                        Optional.of(node -> extractTableStatistics(node,
+                                tableScanNode -> metadata.getTableStatistics(
+                                        session,
+                                        tableScanNode.getTable(),
+                                        ImmutableList.copyOf(tableScanNode.getAssignments().values()),
+                                        new Constraint<>(tableScanNode.getCurrentConstraint())))));
+            }
+            catch (Exception e) {
+                log.error(e, "Error calling externalStatisticsProvider.getStats");
+                return PlanStatistics.empty();
+            }
+        }
+        if (!useHistoryBasedPlanStatisticsEnabled(session)) {
+            return PlanStatistics.empty();
+        }
+        // Unimplemented
+        return PlanStatistics.empty();
     }
 }
