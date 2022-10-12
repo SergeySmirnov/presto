@@ -176,8 +176,7 @@ public class HistoryBasedPlanStatisticsCalculator
     {
         PlanNode plan = resolveGroupReferences(planNode, lookup);
 
-        // if external Stats Provider enabled and node is Join or Aggregation node - get stats from external provider
-        if (useExternalPlanStatisticsEnabled(session) && (planNode instanceof AbstractJoinNode || planNode instanceof AggregationNode)) {
+        if (shouldUseExternalPlanStatistics(planNode, session)) {
             return delegateStats.combineStats(getExternalStatistics(plan, session, types, lookup), new HistoryBasedSourceInfo(Optional.empty()));
         }
 
@@ -230,5 +229,12 @@ public class HistoryBasedPlanStatisticsCalculator
             log.error(e, "Error calling externalStatisticsProvider.getStats");
             return PlanStatistics.empty();
         }
+    }
+
+    private boolean shouldUseExternalPlanStatistics(PlanNode planNode, Session session)
+    {
+        // if external Stats Provider enabled and planNode is Join node - get stats from external provider
+        return useExternalPlanStatisticsEnabled(session) &&
+                planNode instanceof AbstractJoinNode;
     }
 }
