@@ -40,6 +40,7 @@ import com.google.common.cache.LoadingCache;
 import com.google.common.cache.Weigher;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import io.airlift.units.DataSize;
 
 import java.util.Collections;
@@ -47,6 +48,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
@@ -231,10 +233,12 @@ public class HistoryBasedPlanStatisticsCalculator
         }
     }
 
+    // contains PlanNode types for which we should call external stats provider
+    private static final Set<Class<? extends PlanNode>> EXTERNAL_STATS_PROVIDER_ALLOWED_NODE_TYPES = ImmutableSet.of(AbstractJoinNode.class);
+
     private boolean shouldUseExternalPlanStatistics(PlanNode planNode, Session session)
     {
-        // if external Stats Provider enabled and planNode is Join node - get stats from external provider
         return useExternalPlanStatisticsEnabled(session) &&
-                planNode instanceof AbstractJoinNode;
+                EXTERNAL_STATS_PROVIDER_ALLOWED_NODE_TYPES.stream().anyMatch(t -> t.isInstance(planNode));
     }
 }
