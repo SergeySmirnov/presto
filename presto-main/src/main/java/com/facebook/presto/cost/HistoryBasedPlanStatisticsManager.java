@@ -20,8 +20,8 @@ import com.facebook.presto.spi.statistics.EmptyPlanStatisticsProvider;
 import com.facebook.presto.spi.statistics.ExternalPlanStatisticsProvider;
 import com.facebook.presto.spi.statistics.ExternalPlanStatisticsProviderFactory;
 import com.facebook.presto.spi.statistics.HistoryBasedPlanStatisticsProvider;
-import com.facebook.presto.sql.planner.CachingPlanHasher;
-import com.facebook.presto.sql.planner.PlanHasher;
+import com.facebook.presto.sql.planner.CachingPlanCanonicalInfoProvider;
+import com.facebook.presto.sql.planner.PlanCanonicalInfoProvider;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableMap;
@@ -42,7 +42,8 @@ import static java.util.Objects.requireNonNull;
 public class HistoryBasedPlanStatisticsManager
 {
     private final SessionPropertyManager sessionPropertyManager;
-    private final PlanHasher planHasher;
+    private final PlanCanonicalInfoProvider planCanonicalInfoProvider;
+    private final HistoryBasedOptimizationConfig config;
 
     private HistoryBasedPlanStatisticsProvider historyBasedPlanStatisticsProvider = EmptyPlanStatisticsProvider.getInstance();
     private boolean statisticsProviderAdded;
@@ -57,21 +58,13 @@ public class HistoryBasedPlanStatisticsManager
     private boolean externalProviderAdded;
 
     @Inject
-    public HistoryBasedPlanStatisticsManager(ObjectMapper objectMapper, SessionPropertyManager sessionPropertyManager, Metadata metadata)
+    public HistoryBasedPlanStatisticsManager(ObjectMapper objectMapper, SessionPropertyManager sessionPropertyManager, Metadata metadata, HistoryBasedOptimizationConfig config)
     {
         requireNonNull(objectMapper, "objectMapper is null");
         this.sessionPropertyManager = requireNonNull(sessionPropertyManager, "sessionPropertyManager is null");
-        this.planHasher = new CachingPlanHasher(objectMapper);
+        this.planCanonicalInfoProvider = new CachingPlanCanonicalInfoProvider(objectMapper, metadata);
+        this.config = requireNonNull(config, "config is null");
         this.metadata = requireNonNull(metadata, "metadata is null");
-    }
-
-    public void addExternalPlanStatisticsProviderFactory(ExternalPlanStatisticsProviderFactory factory)
-    {
-        requireNonNull(factory, "ExternalPlanStatisticsProviderFactory is null");
-
-        if (externalPlanStatisticsProviderFactories.putIfAbsent(factory.getName(), factory) != null) {
-            throw new IllegalArgumentException(format("ExternalPlanStatisticsProviderFactory '%s' is already registered", factory.getName()));
-        }
     }
 
     public void addHistoryBasedPlanStatisticsProviderFactory(HistoryBasedPlanStatisticsProvider historyBasedPlanStatisticsProvider)
@@ -83,14 +76,28 @@ public class HistoryBasedPlanStatisticsManager
         statisticsProviderAdded = true;
     }
 
+    public void addExternalPlanStatisticsProviderFactory(ExternalPlanStatisticsProviderFactory factory)
+    {
+        requireNonNull(factory, "ExternalPlanStatisticsProviderFactory is null");
+
+        if (externalPlanStatisticsProviderFactories.putIfAbsent(factory.getName(), factory) != null) {
+            throw new IllegalArgumentException(format("ExternalPlanStatisticsProviderFactory '%s' is already registered", factory.getName()));
+        }
+    }
+
     public HistoryBasedPlanStatisticsCalculator getHistoryBasedPlanStatisticsCalculator(StatsCalculator delegate)
     {
-        return new HistoryBasedPlanStatisticsCalculator(() -> historyBasedPlanStatisticsProvider, delegate, planHasher, () -> externalPlanStatisticsProvider, metadata);
+        return new HistoryBasedPlanStatisticsCalculator(() -> historyBasedPlanStatisticsProvider, delegate, planCanonicalInfoProvider, config, () -> externalPlanStatisticsProvider, metadata);
     }
 
     public HistoryBasedPlanStatisticsTracker getHistoryBasedPlanStatisticsTracker()
     {
-        return new HistoryBasedPlanStatisticsTracker(() -> historyBasedPlanStatisticsProvider, sessionPropertyManager, planHasher);
+        return new HistoryBasedPlanStatisticsTracker(() -> historyBasedPlanStatisticsProvider, sessionPropertyManager, config);
+    }
+
+    public PlanCanonicalInfoProvider getPlanCanonicalInfoProvider()
+    {
+        return planCanonicalInfoProvider;
     }
 
     public void loadExternalPlanStatisticsProvider()
