@@ -87,7 +87,8 @@ public class HistoryBasedPlanStatisticsManager
 
     public HistoryBasedPlanStatisticsCalculator getHistoryBasedPlanStatisticsCalculator(StatsCalculator delegate)
     {
-        return new HistoryBasedPlanStatisticsCalculator(() -> historyBasedPlanStatisticsProvider, delegate, planCanonicalInfoProvider, config, () -> externalPlanStatisticsProvider, metadata);
+        return new HistoryBasedPlanStatisticsCalculator(() -> historyBasedPlanStatisticsProvider, delegate,
+                planCanonicalInfoProvider, config, () -> externalPlanStatisticsProvider, metadata);
     }
 
     public HistoryBasedPlanStatisticsTracker getHistoryBasedPlanStatisticsTracker()

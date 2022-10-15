@@ -18,11 +18,10 @@ import com.facebook.presto.Session;
 import com.facebook.presto.common.plan.PlanCanonicalizationStrategy;
 import com.facebook.presto.metadata.Metadata;
 import com.facebook.presto.spi.Constraint;
-import com.facebook.presto.metadata.Metadata;
 import com.facebook.presto.spi.plan.AggregationNode;
 import com.facebook.presto.spi.plan.PlanNode;
 import com.facebook.presto.spi.plan.PlanNodeWithHash;
-import com.facebook.presto.spi.statistics.ExternalPlanStatisticsProvider;
+import com.facebook.presto.spi.statistics.CostBasedSourceInfo;
 import com.facebook.presto.spi.statistics.ExternalPlanStatisticsProvider;
 import com.facebook.presto.spi.statistics.HistoricalPlanStatistics;
 import com.facebook.presto.spi.statistics.HistoryBasedPlanStatisticsProvider;
@@ -185,7 +184,7 @@ public class HistoryBasedPlanStatisticsCalculator
         PlanNode plan = resolveGroupReferences(planNode, lookup);
 
         if (shouldUseExternalPlanStatistics(planNode, session)) {
-            return delegateStats.combineStats(getExternalStatistics(plan, session, types, lookup), new HistoryBasedSourceInfo(Optional.empty()));
+            return delegateStats.combineStats(getExternalStatistics(plan, session, types), new CostBasedSourceInfo());
         }
 
         if (!useHistoryBasedPlanStatisticsEnabled(session)) {
@@ -231,7 +230,7 @@ public class HistoryBasedPlanStatisticsCalculator
         return planCanonicalInfoProvider.getInputTableStatistics(session, statsEquivalentPlanNode);
     }
 
-    private PlanStatistics getExternalStatistics(PlanNode planNode, Session session, TypeProvider types, Lookup lookup)
+    private PlanStatistics getExternalStatistics(PlanNode planNode, Session session, TypeProvider types)
     {
         ExternalPlanStatisticsProvider externalStatisticsProvider = externalPlanStatisticsProvider.get();
         try {
